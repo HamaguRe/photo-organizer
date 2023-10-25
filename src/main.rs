@@ -1,6 +1,6 @@
 //! 指定したフォルダに含まれる画像のファイル名を "撮影日時 + ハッシュ値" にする．
 //! 日時情報が得られなかった場合は全部ハッシュ値．
-//! ハッシュ値はCRC32の16進数表記なので常に8桁．
+//! ハッシュ値はCRC32の16進数表記で，常に8桁．
 //!
 //! 例えば，2023年1月23日の14時30分に撮影した場合は
 //! 2023-01-23_1430_206cc7d9.jpg みたいになる．
@@ -10,37 +10,40 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path;
-use std::io::{self, Write};
+use std::io::{self, Write, BufWriter};
 
 use clap::Parser;
 use crc32fast;
 use rfd::FileDialog;
 use rusttype::{Font, Scale};
-use image::Rgba;
+use image;
 use imageproc::drawing;
 
 mod exif;
 
+// パーサはclapが自動的に実装してくれる
 #[derive(Parser)]
 struct Args {
     /// Print the date on the image (format: YYYY-MM-DD).
-    #[arg(short, long)]
+    #[arg(short, long, help = "Print the date on the image (format: YYYY-MM-DD).")]
     date: bool,
 
     /// Recursive processing when subdirectories exist.
-    #[arg(short, long)]
+    #[arg(short, long, help = "Recursive processing when subdirectories exist.")]
     recursion: bool,
+
+    /// Keep Exif data when printing dates.
+    #[arg(short, long = "keep-exif", help = "Keep Exif data when printing dates.")]
+    keep_exif: bool,
 }
 
 fn main() {
     // コマンドライン引数を読む
-    // -d or --date     : 日付印字
-    // -r or --recursion: サブディレクトリを含めた再帰処理
     let args = Args::parse();
 
     // 処理するディレクトリを選択
     let dir_path = FileDialog::new()
-        .set_directory("~/Pictures/")
+        .set_directory("~")
         .pick_folder();
 
     if dir_path.is_none() {
@@ -78,55 +81,68 @@ fn main() {
     }
 
     println!("Processing...");
-    match change_names(&dir_path.unwrap(), args.date, args.recursion) {
+    match change_names(&dir_path.unwrap(), &args) {
         Ok(()) => println!("Finish!"),
         Err(e) => println!("Error: {}", e),
     }
 }
 
-// exif情報が吹っ飛んでしまう
-// exifの回転を考慮していないので画像によっては回転した状態で保存されてしまう。
-fn print_date(file_path: &path::PathBuf, jpeg_binary: &[u8], date_txt: &str) {
+/// 画像に撮影日時を印字する．
+fn print_date(file_path: &path::PathBuf, jpeg_binary: &[u8], date_txt: &str, keep_exif: bool) {
     {
+        // コンパイル時にフォントファイルのバイナリを埋め込む
         let font = include_bytes!("../fonts-DSEG_v046/DSEG7-Classic-MINI/DSEG7ClassicMini-Bold.ttf");
         let font = Font::try_from_bytes(font).expect("Could not read font data.");
 
         let mut img = image::load_from_memory(jpeg_binary).unwrap();
 
         // Exif情報を読んで画像を回す
+        let orientation = exif::get_orientation(jpeg_binary);
+        if orientation.is_some() {
+            img = match orientation.unwrap() {
+                3 => img.rotate180(),
+                6 => img.rotate90(),
+                8 => img.rotate270(),
+                _ => img,  // Exif情報としては縦軸まわりに反転とかもあるけど，写真では使わないので考慮しない
+            }
+        }
         
         // 文字サイズが画像短辺の1/45になるようにする．
         let font_size = (img.width().min( img.height() ) as f32 / 45.0).round();
-    
+
+        // 文字の表示位置を決定
         let pos_x = img.width()  as i32 - font_size as i32 * 10;
         let pos_y = img.height() as i32 - font_size as i32 * 2;
     
         let scale = Scale::uniform(font_size);
-        let color = Rgba([255, 130, 0, 255]);
+        let color = image::Rgba([255, 130, 0, 255]);
         drawing::draw_text_mut(&mut img, color, pos_x, pos_y, scale, &font, date_txt);
     
         // 品質を指定して保存したい
         img.save(file_path).expect("Failed to overwrite the file.");
     }
 
-    // APP0セグメント内の回転情報を直す
+    if keep_exif {
+        // Exifデータを持たせるために，imageクレートで保存した画像ファイルを開き直してAPP1セグメントを挿入する．
+        let app1 = exif::clear_orientation(jpeg_binary);
 
-    let non_app1_binary = std::fs::read(&file_path).expect("Failed to load image file.");
-    let mut w = io::BufWriter::new(fs::File::create(file_path).unwrap());
-    let next_app0 = exif::next_app0_index(&non_app1_binary).unwrap();
-    w.write(&non_app1_binary[..next_app0]).unwrap();  // 先頭からAPP0の終わりまで書き込む
-    w.write(exif::get_app1(jpeg_binary).unwrap()).unwrap(); // APP1セグメント挿入
-    w.write(&non_app1_binary[next_app0..]).unwrap();  // 残りを書き込む
-    w.flush().expect("File overwrite failed.");
+        let without_app1_binary = fs::read(&file_path).expect("Failed to load image file.");
+        let mut w = BufWriter::new(fs::File::create(file_path).unwrap());
+        let next_app0 = exif::next_app0_index(&without_app1_binary).unwrap();
+        w.write(&without_app1_binary[..next_app0]).unwrap();  // 先頭からAPP0の終わりまで書き込む
+        w.write(&app1).unwrap(); // APP1セグメント挿入
+        w.write(&without_app1_binary[next_app0..]).unwrap();  // 残りを書き込む
+        w.flush().expect("File overwrite failed.");
+    }
 }
 
-/// 日付と時刻データを以下の文字列形式で返す。
+/// 日付と時刻データを以下の文字列形式で返す．
 /// 
 /// YYYY-MM-DD_HHMM
 fn get_date_time(jpeg_binary: &[u8]) -> Option<String> {
-    let mut val = exif::get_date_time_original(exif::get_app1(&jpeg_binary)?)?;
+    let mut val = exif::get_date_time_original(jpeg_binary)?;
 
-    // 文字列にしてしまうと弄りにくいので、バイト列の状態でフォーマットを整える
+    // 文字列にしてしまうと弄りにくいので，バイト列の状態でフォーマットを整える
     val[4]  = b'-';
     val[7]  = b'-';
     val[10] = b'_';
@@ -140,13 +156,13 @@ fn get_date_time(jpeg_binary: &[u8]) -> Option<String> {
 // 
 /// 指定されたディレクトリ内の画像ファイルのファイル名を書き換える．
 /// 拡張子は小文字に統一される．
-fn change_names(dir_path: &path::PathBuf, flag_print_date: bool, flag_sub_dir: bool) -> io::Result<()> {
+fn change_names(dir_path: &path::PathBuf, args: &Args) -> io::Result<()> {
     for entry in fs::read_dir(dir_path)? {  // ディレクトリ内要素のループ
         let file_path = entry?.path();
         if file_path.is_dir() {
             // サブフォルダを処理する場合は再帰処理
-            if flag_sub_dir {
-                change_names(&file_path, flag_print_date, true)?;
+            if args.recursion {
+                change_names(&file_path, args)?;
             }
             // スキップ（サブフォルダを処理し終わったら次に行く）
             continue;
@@ -163,9 +179,8 @@ fn change_names(dir_path: &path::PathBuf, flag_print_date: bool, flag_sub_dir: b
 
         // 画像データ読み込み
         let jpeg_binary = fs::read(&file_path).expect("Failed to load image file.");
-
         let date_time = get_date_time(&jpeg_binary);  // 現状JPEGしか処理できない
-        let hash_crc32 = format!("{:x}", crc32fast::hash(&jpeg_binary));
+        let hash_crc32 = format!("{:08x}", crc32fast::hash(&jpeg_binary));  // 先頭0埋め8桁
 
         // 新しいファイル名を決定
         let mut new_file_name = String::with_capacity(32);
@@ -174,8 +189,8 @@ fn change_names(dir_path: &path::PathBuf, flag_print_date: bool, flag_sub_dir: b
             new_file_name.push('_');
 
             // 日付を印字
-            if flag_print_date {
-                print_date(&file_path, &jpeg_binary, &date_time.unwrap()[..10]);
+            if args.date {
+                print_date(&file_path, &jpeg_binary, &date_time.unwrap()[..10], args.keep_exif);
             }
         }
         new_file_name.push_str(&hash_crc32);
