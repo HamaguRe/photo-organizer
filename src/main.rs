@@ -7,6 +7,7 @@
 
 // $ RUSTFLAGS='-C target-cpu=native -C opt-level=3' cargo build --release
 
+use std::process;
 use std::ffi::OsString;
 use std::fs;
 use std::path;
@@ -48,7 +49,7 @@ fn main() {
 
     if dir_path.is_none() {
         println!("Path is None.");
-        std::process::exit(1);
+        process::exit(1);
     }
 
     println!("--- Info ---");
@@ -73,11 +74,11 @@ fn main() {
             break;
         } else if input.starts_with('n') {
             println!("Pushed 'n' key... program exit.");
-            std::process::exit(0);
+            process::exit(0);
         } else {
             println!("Please push the key, 'y' or 'n'.");
+            input.clear();
         }
-        input.clear();
     }
 
     println!("Processing...");

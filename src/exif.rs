@@ -75,21 +75,21 @@ pub fn clear_orientation(jpeg_binary: &[u8]) -> Vec<u8> {
 }
 
 /// APP0セグメントの次のセグメントの先頭のインデックスを返す．
-pub fn next_app0_index(non_app1_binary: &[u8]) -> Result<usize, &'static str> {
+pub fn next_app0_index(without_app1_binary: &[u8]) -> Result<usize, &'static str> {
     // JPEG画像先頭のSOIマーカを確認
-    if non_app1_binary[..2] != [0xFF, 0xD8] {
+    if without_app1_binary[..2] != [0xFF, 0xD8] {
         return Err("SOI marker does not exist.");
     }
 
     // APP0セグメントの終端を探す
     // APP0セグメントがない場合はSOIマーカの次のインデックスを返す．
     let mut next_app0 = 2;  // APP0の次のセグメント先頭を指すインデックス
-    for i in 2..(non_app1_binary.len() - 1) {
-        if non_app1_binary[i..=(i + 1)] == [0xFF, 0xE0] {  // APP0のマーカを探す
+    for i in 2..(without_app1_binary.len() - 1) {
+        if without_app1_binary[i..(i + 2)] == [0xFF, 0xE0] {  // APP0のマーカを探す
             // セグメント長は必ずビッグエンディアン
-            let segment_len = decode_u16(&non_app1_binary[(i+2)..(i+4)], &ByteOrder::BigEndian) as usize;
+            let segment_len = decode_u16(&without_app1_binary[(i+2)..(i+4)], &ByteOrder::BigEndian) as usize;
             // ASCII文字も一応確認
-            if &non_app1_binary[(i+4)..(i+9)] == b"JFIF\0" {
+            if &without_app1_binary[(i+4)..(i+9)] == b"JFIF\0" {
                 next_app0 = i + segment_len + 2;
                 break;
             }
@@ -103,7 +103,7 @@ pub fn next_app0_index(non_app1_binary: &[u8]) -> Result<usize, &'static str> {
 /// APP1セグメント（マーカを含む）のスライスを返す
 pub fn get_app1(jpeg_binary: &[u8]) -> Option<&[u8]> {
     for i in 0..(jpeg_binary.len() - 1) {
-        if jpeg_binary[i..=(i + 1)] == [0xFF, 0xE1] {  // APP1のマーカを探す
+        if jpeg_binary[i..(i + 2)] == [0xFF, 0xE1] {  // APP1のマーカを探す
             // セグメント長は必ずビッグエンディアン
             let segment_len = decode_u16(&jpeg_binary[(i+2)..(i+4)], &ByteOrder::BigEndian) as usize;
             // Exif識別子を確認（XMPの可能性があるため）
@@ -125,14 +125,14 @@ fn read_tag<'a>(app1: &'a [u8], ifd_offset: usize, tag: u16, byte_order: &ByteOr
     let tmp = OFFSET_TIFF_HEADER + ifd_offset;
     let tag_num = decode_u16(&app1[tmp..(tmp + 2)], byte_order) as usize;
     
-    let tag = match byte_order {
+    let tag_bytes = match byte_order {
         ByteOrder::BigEndian    => tag.to_be_bytes(),
         ByteOrder::LittleEndian => tag.to_le_bytes(),
     };
 
     let mut tag_field_offset = tmp + 2;  // タグフィールドの開始オフセット
     for _ in 0..tag_num {
-        if app1[tag_field_offset..(tag_field_offset + 2)] == tag {  // タグをチェック
+        if app1[tag_field_offset..(tag_field_offset + 2)] == tag_bytes {  // タグをチェック
             // valueのタイプを確認（SHORTかASCIIか...とか）
             let value_type = decode_u16(&app1[(tag_field_offset + 2)..(tag_field_offset + 4)], byte_order);
             
@@ -168,11 +168,11 @@ fn read_tag<'a>(app1: &'a [u8], ifd_offset: usize, tag: u16, byte_order: &ByteOr
 /// Format: YYYY:MM:DD HH:MM:SS (Example: 2015:09:27 11:43:11)
 pub fn get_date_time_original(jpeg_binary: &[u8]) -> Option<[u8; 19]> {
     let app1 = get_app1(jpeg_binary)?;
-
-    let byte_order = if app1[OFFSET_TIFF_HEADER..(OFFSET_TIFF_HEADER + 2)] == [0x4D, 0x4D] {
-        ByteOrder::BigEndian
-    } else {
-        ByteOrder::LittleEndian  // [0x49, 0x49]ならリトルエンディアン
+    
+    let byte_order = match app1[OFFSET_TIFF_HEADER..(OFFSET_TIFF_HEADER + 2)] {
+        [0x4D, 0x4D] => ByteOrder::BigEndian,
+        [0x49, 0x49] => ByteOrder::LittleEndian,
+        _ => return None
     };
 
     // 0th IFDのオフセットを読む．起点はTIFFヘッダの先頭（Exif識別子の直後）．
@@ -194,10 +194,10 @@ pub fn get_date_time_original(jpeg_binary: &[u8]) -> Option<[u8; 19]> {
 pub fn get_orientation(jpeg_binary: &[u8]) -> Option<u16> {
     let app1 = get_app1(jpeg_binary)?;
 
-    let byte_order = if app1[OFFSET_TIFF_HEADER..(OFFSET_TIFF_HEADER + 2)] == [0x4D, 0x4D] {
-        ByteOrder::BigEndian
-    } else {
-        ByteOrder::LittleEndian
+    let byte_order = match app1[OFFSET_TIFF_HEADER..(OFFSET_TIFF_HEADER + 2)] {
+        [0x4D, 0x4D] => ByteOrder::BigEndian,
+        [0x49, 0x49] => ByteOrder::LittleEndian,
+        _ => return None
     };
 
     // 0th IFDのオフセットを読む．起点はTIFFヘッダの先頭（Exif識別子の直後）．
