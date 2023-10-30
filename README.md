@@ -11,10 +11,11 @@ $ photo-organizer --help
 Usage: photo-organizer [OPTIONS]
 
 Options:
-  -d, --date       Print the date on the image (format: YYYY-MM-DD).
-  -r, --recursion  Recursive processing when subdirectories exist.
-  -k, --keep-exif  Keep Exif data when printing dates.
-  -h, --help       Print help
+  -d, --date         Print the date on the image (format: YYYY-MM-DD).
+  -r, --recursion    Recursive processing when subdirectories exist.
+  -k, --keep-exif    Keep Exif data when printing dates.
+  -p, --path <PATH>  Give the path of the directory to be processed as a command line argument.
+  -h, --help         Print help
 ```
 
 `-d`オプションを付けた場合には画像処理の都合でExifデータが削除されるため、もしExifデータを維持したい場合は一緒に`-k`オプションを付けて実行してください。

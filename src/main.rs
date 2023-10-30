@@ -36,24 +36,33 @@ struct Args {
     /// Keep Exif data when printing dates.
     #[arg(short, long = "keep-exif", help = "Keep Exif data when printing dates.")]
     keep_exif: bool,
+
+    /// Give the path of the directory to be processed as a command line argument.
+    #[arg(short, long, help = "Give the path of the directory to be processed as a command line argument.")]
+    path: Option<String>,
 }
 
 fn main() {
     // コマンドライン引数を読む
     let args = Args::parse();
+    
+    let dir_path: path::PathBuf = if args.path.is_some() {
+        args.path.as_ref().unwrap().into()
+    } else {
+        // 処理するディレクトリを選択
+        let picked = FileDialog::new()
+            .set_directory("~")
+            .pick_folder();
 
-    // 処理するディレクトリを選択
-    let dir_path = FileDialog::new()
-        .set_directory("~")
-        .pick_folder();
-
-    if dir_path.is_none() {
-        println!("Path is None.");
-        process::exit(1);
-    }
+        if picked.is_none() {
+            println!("Directory was not selected.");
+            process::exit(1);
+        }
+        picked.unwrap()
+    };
 
     println!("--- Info ---");
-    println!("Change names of files in this directory: {}", dir_path.as_ref().unwrap().display());
+    println!("Change names of files in this directory: {}", dir_path.display());
     if args.date {
         println!("And, since you specified the -d option, I'll print the date on the image.");
         println!("Note that it will overwrite existing image data!!");
@@ -63,33 +72,35 @@ fn main() {
     }
     println!("------------");
 
-    // 実行確認
-    let mut input = String::with_capacity(8);
-    loop {
-        print!("Can I start the process? [y/n]: ");
-        io::stdout().flush().unwrap(); // 上記出力を強制フラッシュ
-        io::stdin().read_line(&mut input).expect("Input error.");
+    // ダイアログで選択した場合は実行確認
+    if args.path.is_none() {
+        let mut input = String::with_capacity(8);
+        loop {
+            print!("Can I start the process? [y/n]: ");
+            io::stdout().flush().unwrap(); // 上記出力を強制フラッシュ
+            io::stdin().read_line(&mut input).expect("Input error.");
 
-        if input.starts_with('y') {
-            break;
-        } else if input.starts_with('n') {
-            println!("Pushed 'n' key... program exit.");
-            process::exit(0);
-        } else {
-            println!("Please push the key, 'y' or 'n'.");
-            input.clear();
+            if input.starts_with('y') {
+                break;
+            } else if input.starts_with('n') {
+                println!("Pushed 'n' key... program exit.");
+                process::exit(0);
+            } else {
+                println!("Please push the key, 'y' or 'n'.");
+                input.clear();
+            }
         }
     }
 
     println!("Processing...");
-    match change_names(&dir_path.unwrap(), &args) {
+    match change_names(&dir_path, &args) {
         Ok(()) => println!("Finish!"),
         Err(e) => println!("Error: {}", e),
     }
 }
 
 /// 画像に撮影日時を印字する．
-fn print_date(file_path: &path::PathBuf, jpeg_binary: &[u8], date_txt: &str, keep_exif: bool) {
+fn print_date(file_path: &path::Path, jpeg_binary: &[u8], date_txt: &str, keep_exif: bool) {
     {
         // コンパイル時にフォントファイルのバイナリを埋め込む
         let font = include_bytes!("../fonts-DSEG_v046/DSEG7-Classic-MINI/DSEG7ClassicMini-Bold.ttf");
@@ -116,7 +127,7 @@ fn print_date(file_path: &path::PathBuf, jpeg_binary: &[u8], date_txt: &str, kee
         let pos_y = img.height() as i32 - font_size as i32 * 2;
     
         let scale = Scale::uniform(font_size);
-        let color = image::Rgba([255, 130, 0, 255]);
+        let color = image::Rgba([255, 110, 30, 255]);  // 濃いオレンジ
         drawing::draw_text_mut(&mut img, color, pos_x, pos_y, scale, &font, date_txt);
     
         // 品質を指定して保存したい
@@ -157,7 +168,7 @@ fn get_date_time(jpeg_binary: &[u8]) -> Option<String> {
 // 
 /// 指定されたディレクトリ内の画像ファイルのファイル名を書き換える．
 /// 拡張子は小文字に統一される．
-fn change_names(dir_path: &path::PathBuf, args: &Args) -> io::Result<()> {
+fn change_names(dir_path: &path::Path, args: &Args) -> io::Result<()> {
     for entry in fs::read_dir(dir_path)? {  // ディレクトリ内要素のループ
         let file_path = entry?.path();
         if file_path.is_dir() {
