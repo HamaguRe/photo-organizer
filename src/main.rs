@@ -22,7 +22,7 @@ use imageproc::drawing;
 
 mod exif;
 
-// パーサはclapが自動的に実装してくれる
+// パーサはコンパイル時にclapが自動的に実装してくれる
 #[derive(Parser)]
 struct Args {
     /// Print the date on the image (format: YYYY-MM-DD).
@@ -79,10 +79,11 @@ fn main() {
             print!("Can I start the process? [y/n]: ");
             io::stdout().flush().unwrap(); // 上記出力を強制フラッシュ
             io::stdin().read_line(&mut input).expect("Input error.");
+            input = (&input.trim()).to_string();  // 改行コードを除去
 
-            if input.starts_with('y') {
+            if (input.len() == 1) & input.starts_with('y') {
                 break;
-            } else if input.starts_with('n') {
+            } else if (input.len() == 1) & input.starts_with('n') {
                 println!("Pushed 'n' key... program exit.");
                 process::exit(0);
             } else {
@@ -176,7 +177,7 @@ fn change_names(dir_path: &path::Path, args: &Args) -> io::Result<()> {
             if args.recursion {
                 change_names(&file_path, args)?;
             }
-            // スキップ（サブフォルダを処理し終わったら次に行く）
+            // サブフォルダを処理し終わったら次に行く（-rオプションが指定されていない場合はスキップ）
             continue;
         }
 
