@@ -74,6 +74,13 @@ fn main() {
 
     // ダイアログで選択した場合は実行確認
     if args.path.is_none() {
+        // 指定したフォルダの直下にある画像枚数を表示する（-rを指定した場合はフォルダ数も）
+        let (jpeg_files, folders) = count_file_folder(&dir_path).unwrap();
+        println!("I found {} jpeg files in this directory.", jpeg_files);
+        if args.recursion {
+            println!("And {} sub directries.", {folders});
+        }
+
         let mut input = String::with_capacity(8);
         loop {
             print!("Can I start the process? [y/n]: ");
@@ -98,6 +105,34 @@ fn main() {
         Ok(()) => println!("Finish!"),
         Err(e) => println!("Error: {}", e),
     }
+}
+
+/// 指定したパスに含まれるJPEGファイルとフォルダ数を返す。
+/// 
+/// (JPEGファイル数, フォルダ数)
+fn count_file_folder(path: &path::Path) -> io::Result<(usize, usize)> {
+    let mut cnt_jpg = 0;
+    let mut cnt_dir = 0;
+    for entry in fs::read_dir(path)? {  // ディレクトリ内要素のループ
+        let file_path = entry?.path();
+
+        if file_path.is_dir() {
+            cnt_dir += 1;
+            continue;
+        }
+
+        let ext = match file_path.extension() {
+            Some(ext) => ext.to_ascii_lowercase(),  // 小文字に変換
+            None => continue,
+        };
+
+        if ext == OsString::from("jpg") || ext == OsString::from("jpeg") {
+            cnt_jpg += 1;
+        }
+
+    }
+
+    Ok((cnt_jpg, cnt_dir))
 }
 
 /// 画像に撮影日時を印字する．
@@ -128,7 +163,7 @@ fn print_date(file_path: &path::Path, jpeg_binary: &[u8], date_txt: &str, keep_e
         let pos_y = img.height() as i32 - font_size as i32 * 2;
     
         let scale = Scale::uniform(font_size);
-        let color = image::Rgba([255, 110, 30, 255]);  // 濃いオレンジ
+        let color = image::Rgba::<u8>([255, 90, 0, 255]);  // 濃いオレンジ（Gを小さくすると赤に近くなる）
         drawing::draw_text_mut(&mut img, color, pos_x, pos_y, scale, &font, date_txt);
     
         // 品質を指定して保存したい
@@ -165,7 +200,7 @@ fn get_date_time(jpeg_binary: &[u8]) -> Option<String> {
     Some( String::from_utf8(val[..15].to_vec()).unwrap() )
 }
 
-// PNGからの日付情報の読み出しにはまだ未対応（そもそもPNGには日時情報を保持する仕組みがない？）
+// PNGからの日付情報の読み出しにはまだ未対応（補助チャンクのExifデータを読み出せば可能）
 // 
 /// 指定されたディレクトリ内の画像ファイルのファイル名を書き換える．
 /// 拡張子は小文字に統一される．

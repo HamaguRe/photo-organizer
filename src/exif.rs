@@ -1,5 +1,6 @@
 //! Exifデータの読み出し・修正を行うためのモジュール
 //! JPEGのみ
+//! 規格としてはPNGも補助チャンク内にExifメタデータを保持できる
 
 enum ByteOrder {
     BigEndian,
