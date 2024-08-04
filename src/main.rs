@@ -39,7 +39,7 @@ struct Args {
 
     /// Give the path of the directory to be processed as a command line argument.
     #[arg(short, long, help = "Give the path of the directory to be processed as a command line argument.")]
-    path: Option<String>,
+    path: Option<OsString>,
 }
 
 fn main() {

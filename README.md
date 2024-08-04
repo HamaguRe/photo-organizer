@@ -40,6 +40,20 @@ $ photo-organizer -p /home/user/Pictures/folder1
 
 ## 実行手順
 
+### コンパイル
+
+適当なフォルダにダウンロードしてコンパイル
+
+```shell
+$ git clone https://github.com/HamaguRe/photo-organizer.git
+$ cd photo-organizer
+$ cargo build --release
+```
+
+`photo-organizer/target/release/`配下に`photo-organizer`という名前の実行ファイルが生成されるので、使いやすいところに移動して実行する。
+
+### 実行
+
 １．実行するとフォルダ選択ダイアログが開くので、処理したい画像が入っているフォルダを選択
 
 ![GUIでフォルダ選択](./imgs/screenshot_1.png)
