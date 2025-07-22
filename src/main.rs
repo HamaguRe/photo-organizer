@@ -76,7 +76,7 @@ fn main() {
     if args.path.is_none() {
         // 指定したフォルダの直下にある画像枚数を表示する（-rを指定した場合はフォルダ数も）
         let (jpeg_files, folders) = count_file_folder(&dir_path).unwrap();
-        println!("I found {} jpeg files in this directory.", jpeg_files);
+        println!("I found {} JPEG files in this directory.", jpeg_files);
         if args.recursion {
             println!("And {} sub directries.", {folders});
         }
@@ -101,7 +101,7 @@ fn main() {
     }
 
     println!("Processing...");
-    match change_names(&dir_path, &args) {
+    match process_images(&dir_path, &args) {
         Ok(()) => println!("Finish!"),
         Err(e) => println!("Error: {}", e),
     }
@@ -204,13 +204,13 @@ fn get_date_time(jpeg_binary: &[u8]) -> Option<String> {
 // 
 /// 指定されたディレクトリ内の画像ファイルのファイル名を書き換える．
 /// 拡張子は小文字に統一される．
-fn change_names(dir_path: &path::Path, args: &Args) -> io::Result<()> {
+fn process_images(dir_path: &path::Path, args: &Args) -> io::Result<()> {
     for entry in fs::read_dir(dir_path)? {  // ディレクトリ内要素のループ
         let file_path = entry?.path();
         if file_path.is_dir() {
             // サブフォルダを処理する場合は再帰処理
             if args.recursion {
-                change_names(&file_path, args)?;
+                process_images(&file_path, args)?;
             }
             // サブフォルダを処理し終わったら次に行く（-rオプションが指定されていない場合はスキップ）
             continue;
@@ -221,7 +221,8 @@ fn change_names(dir_path: &path::Path, args: &Args) -> io::Result<()> {
             Some(ext) => ext.to_ascii_lowercase(),  // 小文字に変換
             None => continue,
         };
-        if ext != OsString::from("jpg") {
+
+        if ext != OsString::from("jpg") && ext != OsString::from("jpeg") {
             continue;  // jpg以外は飛ばす
         }
 
@@ -242,8 +243,7 @@ fn change_names(dir_path: &path::Path, args: &Args) -> io::Result<()> {
             }
         }
         new_file_name.push_str(&hash_crc32);
-        new_file_name.push('.');
-        new_file_name.push_str(ext.to_str().unwrap());
+        new_file_name.push_str(".jpg");
 
         // 新しいパスを作って書き換え
         let new_file_path = file_path.parent().unwrap().join(new_file_name);
