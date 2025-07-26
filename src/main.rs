@@ -33,10 +33,6 @@ struct Args {
     #[arg(short, long, help = "Recursive processing when subdirectories exist.")]
     recursion: bool,
 
-    /// Keep Exif data when printing dates.
-    #[arg(short, long = "keep-exif", help = "Keep Exif data when printing dates.")]
-    keep_exif: bool,
-
     /// Give the path of the directory to be processed as a command line argument.
     #[arg(short, long, help = "Give the path of the directory to be processed as a command line argument.")]
     path: Option<OsString>,
@@ -136,7 +132,7 @@ fn count_file_folder(path: &path::Path) -> io::Result<(usize, usize)> {
 }
 
 /// 画像に撮影日時を印字する．
-fn print_date(file_path: &path::Path, jpeg_binary: &[u8], date_txt: &str, keep_exif: bool) {
+fn print_date(file_path: &path::Path, jpeg_binary: &[u8], date_txt: &str) {
     {
         // コンパイル時にフォントファイルのバイナリを埋め込む
         let font = include_bytes!("../fonts-DSEG_v046/DSEG7-Classic-MINI/DSEG7ClassicMini-Bold.ttf");
@@ -170,7 +166,7 @@ fn print_date(file_path: &path::Path, jpeg_binary: &[u8], date_txt: &str, keep_e
         img.save(file_path).expect("Failed to overwrite the file.");
     }
 
-    if keep_exif {
+    {
         // Exifデータを持たせるために，imageクレートで保存した画像ファイルを開き直してAPP1セグメントを挿入する．
         let app1 = exif::clear_orientation(jpeg_binary);
 
@@ -239,7 +235,7 @@ fn process_images(dir_path: &path::Path, args: &Args) -> io::Result<()> {
 
             // 日付を印字
             if args.date {
-                print_date(&file_path, &jpeg_binary, &date_time.unwrap()[..10], args.keep_exif);
+                print_date(&file_path, &jpeg_binary, &date_time.unwrap()[..10]);
             }
         }
         new_file_name.push_str(&hash_crc32);
